@@ -363,7 +363,7 @@ static int decode_rangecmpb(raw_t *raw)
     uint8_t *p=raw->buff+OEM4HLEN;
     char *q;
     double psr,adr,adr_rolls,lockt,tt,dop,snr,freq,glo_bias=0.0;
-    int i,index,nobs,prn,sat,sys,code,idx,track,plock,clock,parity,halfc,lli;
+    int i,index,nobs,prn,sat,sys,code,idx,track,plock,clock,parity,halfc,lli,glo_ch;
     
     if ((q=strstr(raw->opt,"-GLOBIAS="))) sscanf(q,"-GLOBIAS=%lf",&glo_bias);
     
@@ -397,7 +397,11 @@ static int decode_rangecmpb(raw_t *raw)
         
         dop=exsign(U4(p+4)&0xFFFFFFF,28)/256.0;
         psr=(U4(p+7)>>4)/128.0+U1(p+11)*2097152.0;
-        
+
+        if (sys==SYS_GLO&&!raw->nav.glo_fcn[prn-1]) {
+            glo_ch=((U1(p+21)&0xfc)>>2)-7; /* GLO CH+7 */
+            raw->nav.glo_fcn[prn-1]=glo_ch+8; /* fcn+8 */
+        }
         if ((freq=sat2freq(sat,(uint8_t)code,&raw->nav))!=0.0) {
             adr=I4(p+12)/256.0;
             adr_rolls=(psr*freq/CLIGHT+adr)/MAXVAL;
@@ -479,7 +483,7 @@ static int decode_rangeb(raw_t *raw)
         
         if ((idx=checkpri(raw->opt,sys,code,idx))<0) continue;
         
-        gfrq =U2(p+ 2); /* GLONASS FCN+8 */
+        gfrq =U2(p+ 2)-7; /* GLONASS FCN+7 */
         psr  =R8(p+ 4);
         adr  =R8(p+16);
         dop  =R4(p+28);
@@ -487,11 +491,11 @@ static int decode_rangeb(raw_t *raw)
         lockt=R4(p+36);
         
         if (sys==SYS_GLO) {
+            if (!raw->nav.glo_fcn[prn-1]) {
+                raw->nav.glo_fcn[prn-1]=gfrq+8; /* fcn+8 */
+            }
             freq=sat2freq(sat,(uint8_t)code,&raw->nav);
             adr-=glo_bias*freq/CLIGHT;
-            if (!raw->nav.glo_fcn[prn-1]) {
-                raw->nav.glo_fcn[prn-1]=gfrq; /* fcn+8 */
-            }
         }
         if (raw->tobs[sat-1][idx].time!=0) {
             tt=timediff(raw->time,raw->tobs[sat-1][idx]);
